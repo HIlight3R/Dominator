@@ -1,4 +1,7 @@
+import os
+
 import discord
+import youtube_dl
 from discord.ext import commands
 
 from config import PREFIX, TOKEN, DELETE_COMMANDS, MUTE_ROLE_ID, USE_AUTO_ROLE, AUTO_ROLE_ID, USE_NEWCOMER_NOTICE, \
@@ -33,6 +36,8 @@ def main():
         if isinstance(error, commands.CommandNotFound):
             await ctx.send(
                 f'{ctx.author.mention}, такой команды не существует, воспользуйтесь справкой, введя {PREFIX}help.')
+        else:
+            print(error)
 
     @client.event
     async def on_message(message: discord.Message):
@@ -87,6 +92,10 @@ def main():
         embed.add_field(name=f'{PREFIX}unmute ПОЛЬЗОВАТЕЛЬ',
                         value='Разрешает участнику ПОЛЬЗОВАТЕЛЬ писать сообщения в текстовые каналы, если до этого он '
                               'не мог это делать.')
+        embed.add_field(name=f'{PREFIX}join',
+                        value='Бот присоединится к голосовому каналу пользователя, вызвавшего команду.')
+        embed.add_field(name=f'{PREFIX}leave', value='Бот покинет голосовой канал.')
+        embed.add_field(name=f'{PREFIX}play YOUTUBE_ССЫЛКА', value='Играет аудио по ссылке YOUTUBE_ССЫЛКА.')
         embed.set_thumbnail(url=client.user.avatar_url)
         embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
@@ -174,6 +183,69 @@ def main():
                 await member.send('Вы были размьючены на сервере.')
         else:
             await ctx.send(f'Участник {member.mention} не в мьюте, поэтому не может быть размьючен.')
+
+    @client.command(name='join')
+    async def _join(ctx):
+        """Присоединится в голосовой канал"""
+        channel = ctx.message.author.voice.channel
+        voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
+
+        if voice and voice.is_connected():
+            await voice.move_to(channel)
+        else:
+            await channel.connect()
+        await ctx.send(f'Бот присоединился к каналу {channel}')
+
+    @client.command(name='leave')
+    async def _leave(ctx):
+        """Покинуть голосовой канал"""
+        channel = ctx.message.author.voice.channel
+        voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
+
+        if voice and voice.is_connected():
+            await voice.disconnect()
+            await ctx.send(f'Бот отключился от канала {channel}')
+        else:
+            await ctx.send('Бот не подключен к голосовому каналу и не может быть отключен.')
+
+    @client.command(name='play')
+    async def _play(ctx, url: str):
+        """Воспроизведение музыки"""
+        song_there = os.path.isfile("song.mp3")
+        try:
+            if song_there:
+                os.remove("song.mp3")
+        except PermissionError:
+            return
+
+        await ctx.send("Ожидайте...")
+
+        voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
+
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
+        }
+
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        for file in os.listdir("./"):
+            if file.endswith(".mp3"):
+                name = file
+                os.rename(file, "song.mp3")
+        if voice is None:
+            voice = await ctx.message.author.voice.channel.connect()
+        voice.play(discord.FFmpegPCMAudio("song.mp3"))
+        voice.source = discord.PCMVolumeTransformer(voice.source)
+        voice.source.volume = 0.07
+
+        nname = name.rpartition('-')
+        await ctx.send(f"Играет: {nname[0]}")
 
     @_kick.error
     @_ban.error
