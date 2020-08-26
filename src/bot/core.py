@@ -7,6 +7,10 @@ from discord.ext import commands
 from config import PREFIX, TOKEN, DELETE_COMMANDS, MUTE_ROLE_ID, USE_AUTO_ROLE, AUTO_ROLE_ID, USE_NEWCOMER_NOTICE, \
     NEWCOMER_NOTICE_CHANNEL, SEND_PUNISHMENT_PERSONAL_MESSAGE, USE_CHAT_FILTRATION, BAD_WORD_LIST
 
+import requests
+from PIL import Image, ImageFont, ImageDraw
+import io
+
 # Настройка префикса для команд
 client = commands.Bot(command_prefix=PREFIX)
 client.remove_command('help')
@@ -96,6 +100,7 @@ def main():
                         value='Бот присоединится к голосовому каналу пользователя, вызвавшего команду.')
         embed.add_field(name=f'{PREFIX}leave', value='Бот покинет голосовой канал.')
         embed.add_field(name=f'{PREFIX}play YOUTUBE_ССЫЛКА', value='Играет аудио по ссылке YOUTUBE_ССЫЛКА.')
+        embed.add_field(name=f'{PREFIX}card', value='Показывает карточку пользователя.')
         embed.set_thumbnail(url=client.user.avatar_url)
         embed.set_footer(text=ctx.author.name, icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
@@ -189,7 +194,6 @@ def main():
         """Присоединится в голосовой канал"""
         channel = ctx.message.author.voice.channel
         voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-
         if voice and voice.is_connected():
             await voice.move_to(channel)
         else:
@@ -201,7 +205,6 @@ def main():
         """Покинуть голосовой канал"""
         channel = ctx.message.author.voice.channel
         voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-
         if voice and voice.is_connected():
             await voice.disconnect()
             await ctx.send(f'Бот отключился от канала {channel}')
@@ -211,18 +214,16 @@ def main():
     @client.command(name='play')
     async def _play(ctx, url: str):
         """Воспроизведение музыки"""
-        song_there = os.path.isfile("song.mp3")
+        song_there = os.path.isfile("tmp/song.mp3")
         try:
             if song_there:
-                os.remove("song.mp3")
+                os.remove("tmp/song.mp3")
         except PermissionError:
             return
-
         await ctx.send("Ожидайте...")
-
         voice = discord.utils.get(client.voice_clients, guild=ctx.guild)
-
         ydl_opts = {
+            'outtmpl': os.path.abspath('tmp') + '/%(title)s.%(ext)s',
             'format': 'bestaudio/best',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -230,22 +231,41 @@ def main():
                 'preferredquality': '192',
             }],
         }
-
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
-
-        for file in os.listdir("./"):
+        for file in os.listdir("./tmp"):
+            os.chdir('./tmp')
             if file.endswith(".mp3"):
                 name = file
                 os.rename(file, "song.mp3")
+            os.chdir('../')
         if voice is None:
             voice = await ctx.message.author.voice.channel.connect()
+        os.chdir('./tmp')
         voice.play(discord.FFmpegPCMAudio("song.mp3"))
+        os.chdir('../')
         voice.source = discord.PCMVolumeTransformer(voice.source)
         voice.source.volume = 0.07
+        await ctx.send(f"Играет: {name}.")
 
-        nname = name.rpartition('-')
-        await ctx.send(f"Играет: {nname[0]}")
+    @client.command(name='card')
+    async def _card(ctx):
+        img = Image.new('RGBA', (400, 200), '#FD7C00')
+        url = str(ctx.author.avatar_url)[:-10]
+        response = requests.get(url, stream=True)
+        response = Image.open(io.BytesIO(response.content))
+        response = response.convert('RGBA')
+        response = response.resize((100, 100), Image.ANTIALIAS)
+        img.paste(response, (15, 15, 115, 115))
+        idraw = ImageDraw.Draw(img)
+        name = ctx.author.name
+        tag = ctx.author.discriminator
+        headline = ImageFont.truetype('fonts/russo_one.ttf', size=20)
+        undertext = ImageFont.truetype('fonts/russo_one.ttf', size=12)
+        idraw.text((145, 15), f'{name}#{tag}', font=headline)
+        idraw.text((145, 50), f'ID: {ctx.author.id}', font=undertext)
+        img.save('user_card.png')
+        await ctx.send(file=discord.File(fp='user_card.png'))
 
     @_kick.error
     @_ban.error
