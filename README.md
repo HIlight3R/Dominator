@@ -47,7 +47,7 @@ git clone https://github.com/hilight3r/Dominator.git
 cd Dominator
 python3 -m pip install --upgrade pip
 pip3 install -r requirements.txt
-# Тут редоктируете файл конфигурации config.py
+# Тут редактируете файл конфигурации config.py
 nano config.py
 python3 main.py
 ```
